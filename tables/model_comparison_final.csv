@@ -1,0 +1,13 @@
+model,CV_R2,CV_RMSE,CV_MAE
+"LinearRegression
+(순서형)",0.783,887.61,656.23
+"LinearRegression
+(원-핫)",0.821,805.42,586.77
+"RandomForest
+(default)",0.875,673.24,457.42
+"RandomForest
+(튜닝)",0.874,676.85,465.15
+"XGBoost
+(default)",0.872,681.54,474.62
+"XGBoost
+(튜닝)",0.893,621.66,439.36

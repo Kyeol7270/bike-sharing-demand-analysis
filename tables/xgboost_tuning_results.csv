@@ -1,0 +1,3 @@
+stage,train_R2,test_R2,test_RMSE,test_MAE,cv_R2_mean,best_params
+before(default),1.0,0.8835926055908203,683.2129746645625,447.38848876953125,0.8724224686622619,n_estimators=300 (그 외 default)
+after(tuned),0.9784674644470215,0.8967203497886658,643.5364208807455,435.1366271972656,0.8932912111282348,"{'subsample': 0.6, 'reg_lambda': 3, 'reg_alpha': 1, 'n_estimators': 150, 'min_child_weight': 1, 'max_depth': 4, 'learning_rate': 0.1, 'colsample_bytree': 0.7}"
