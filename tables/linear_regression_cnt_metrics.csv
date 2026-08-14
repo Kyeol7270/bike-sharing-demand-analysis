@@ -1,0 +1,2 @@
+model,target,features,test_size,random_state,n_train,n_test,R2,RMSE,MAE
+LinearRegression,cnt,"season,yr,mnth,holiday,weekday,workingday,weathersit,temp,atemp,hum,windspeed",0.2,42,584,147,0.8281856753804181,830.0332627172182,616.441720290891
