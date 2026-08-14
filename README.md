@@ -1,64 +1,63 @@
-# 자전거 대여 수요 예측 (Bike Sharing Demand Analysis)
+# 자전거 대여 수요 분석 (Bike Sharing Demand Analysis)
 
-**Claude Code(CLI)를 활용해 데이터 확인 → 정제 → 탐색적 분석 → 시각화 → 모델링 → 결과 해석 → 문서화까지 전 과정을 수행한 데이터 분석 프로젝트입니다.**
+UCI Bike Sharing Dataset(2011~2012년, 일별 731건)으로 **하루 자전거 대여 건수를 무엇이 결정하는지**
+분석하고 회귀 모델을 비교한 프로젝트입니다. 데이터 확인 → 정제 → EDA → 모델링 → 튜닝 → 결과 해석 →
+문서화까지 전 과정을 직접 설계하고, 각 단계의 실행과 검증에 Claude Code(CLI)를 활용했습니다.
 
-UCI Bike Sharing Dataset(2011~2012년, 일별 731건)을 사용해 날씨·달력 정보로 하루 자전거 대여
-건수를 예측하고, 어떤 요인이 수요에 가장 큰 영향을 미치는지 분석했습니다.
-
-> 상세 리포트는 [`docs/REPORT.md`](docs/REPORT.md), 분석을 진행하며 실시간으로 남긴 작업 로그는
-> [`docs/WORKLOG.md`](docs/WORKLOG.md)에서 확인할 수 있습니다.
+> 상세 리포트: [`docs/REPORT.md`](docs/REPORT.md) · 작업 로그: [`docs/WORKLOG.md`](docs/WORKLOG.md)
 
 ---
 
-## 핵심 결과 요약
+## 한눈에 보는 결과
 
 | 항목 | 내용 |
 |---|---|
 | 데이터 | UCI Bike Sharing Dataset, 731행 (2011-01-01 ~ 2012-12-31) |
-| 타겟 변수 | `cnt` (하루 총 대여 건수) |
-| 최종 모델 | **XGBoost (튜닝)** |
-| 성능 (5-fold CV) | **R² = 0.893**, RMSE = 621.66, MAE = 439.36 |
-| 가장 중요한 변수 | `yr`(연도) > `temp`(기온) > `hum`(습도) |
+| 타겟 | `cnt` (하루 총 대여 건수), 설명변수 11개 |
+| 기준 모델 | **XGBoost (튜닝)** — CV R² 0.893 ±0.024, 홀드아웃 R² 0.897, MAE 435 |
+| 가장 중요한 변수 | `yr`(연도) 0.507 > `temp`(기온) 0.345 > `hum`(습도) 0.103 |
+| 성능 해석 | 평균 4,504건 대비 하루 오차 약 435건(≈10%) |
+
+**단, "XGBoost가 모든 지표에서 최고"는 아닙니다.** 상위 트리 모델 4개의 CV R² 차이(0.872~0.893)는
+5-fold 표준편차(±0.024~0.026)보다 작고, 튜닝에 쓰이지 않은 홀드아웃 구간에서는 **MAE 1위가
+RandomForest(426.19 vs 435.14)** 입니다. 그래서 결과를 교차검증과 홀드아웃 두 프로토콜로 나란히
+싣고, 순위를 단정하지 않았습니다. (자세한 이유 → [`docs/REPORT.md` 5-2절](docs/REPORT.md))
 
 <p align="center">
-  <img src="figures/model_performance_comparison.png" width="760" alt="6개 회귀모델 CV 성능 비교">
+  <img src="figures/model_performance_comparison.png" width="860" alt="6개 회귀모델 성능 비교 — 교차검증 vs 홀드아웃">
 </p>
 
 ---
 
 ## 분석 과정
 
-### 1. 데이터 확인
-731행 16열, 결측치 0건을 확인했으나 `hum`(습도) 컬럼에서 물리적으로 불가능한 `0.000` 값 1건을
-IQR 이상치 검사로 발견했습니다.
+**1. 데이터 확인 · 정제** — 결측치는 0건이었지만, IQR 이상치 점검에서 `hum`(습도)이 정확히 `0.000`인
+날을 1건 발견했습니다. 그날의 날씨 등급이 `weathersit=3`(약한 눈/비)이었으므로 습도 0%는 물리적으로
+불가능하다고 판단해 결측 처리 후 선형보간(→0.712)했습니다. 반면 `windspeed` 이상치 13건은 레버리지를
+계산해 값 자체가 비현실적이지 않음을 확인하고 **삭제하지 않고 유지**했습니다. — 이상치는 "통계적으로
+튀는 값"이 아니라 "물리적으로 불가능한 값"을 기준으로 걸러야 한다고 봤습니다.
 
-### 2. 데이터 정제
-`hum=0`인 날(비/눈이 온 날임에도 습도 0%)을 센서 오류로 판단해 결측 처리 후 시간축 선형보간으로
-보정했습니다. windspeed의 이상치 13건은 회귀 레버리지 분석으로 실측 강풍일임을 확인해 유지했습니다.
-
-### 3. 탐색적 분석 & 시각화
-온도-대여량 상관관계(r=0.63), 날씨등급별 분포, 계절/요일별 경향, 계절×요일 히트맵을 통해
-날씨와 대여량의 관계, 회원/비회원의 이용 패턴 차이(평일 vs 주말)를 확인했습니다.
+**2. 탐색적 분석** — 온도-대여량 양의 상관(r=0.63), 날씨 등급이 나빠질수록 단계적으로 하락하는 분포,
+그리고 계절×요일 히트맵에서 **회원은 평일 / 비회원은 주말**이라는 이용 패턴 차이를 확인했습니다.
 
 <p align="center">
   <img src="figures/temp_vs_cnt_scatter.png" width="380" alt="온도-대여건수 산점도">
   <img src="figures/season_weekday_heatmap.png" width="380" alt="계절x요일 히트맵">
 </p>
 
-### 4. 회귀 모델링
-`cnt = casual + registered`라는 항등식을 발견해 **데이터 누수(data leakage)를 사전에 차단**하고
-(`casual`, `registered`를 설명변수에서 제외), 6개 모델(선형회귀 2종, RandomForest, XGBoost — 각 튜닝 전/후)을
-동일한 train/test 분할과 5-fold 교차검증으로 공정하게 비교했습니다.
+**3. 데이터 누수 차단** — `cnt = casual + registered`라는 항등식을 먼저 확인하고 두 변수를 설명변수에서
+제외했습니다. 검증 삼아 포함해서 돌려본 결과 R²=1.0000, `casual`·`registered` 계수가 정확히 1.0으로
+수렴해 모델이 아무것도 예측하지 않고 항등식을 되돌려준다는 것을 확인했습니다
+([`src/06_data_leakage_check.py`](src/06_data_leakage_check.py)).
 
-### 5. 과적합 검증 & 하이퍼파라미터 튜닝
-train/test 성능 격차로 과적합 여부를 확인하고, RandomizedSearchCV(5-fold CV, 60개 조합)로 튜닝했습니다.
-XGBoost는 튜닝으로 성능과 일반화가 함께 개선(R² 0.872→0.893)됐지만, RandomForest는 튜닝 효과가
-거의 없었습니다 — 배깅 기반 모델이 이미 자체적으로 과적합을 완화하는 구조이기 때문이라는 점을
-확인하고 default 설정을 유지했습니다 (자세한 원인은 [`docs/REPORT.md`](docs/REPORT.md) 참고).
+**4. 모델 비교 · 과적합 검증** — 선형회귀 2종 / RandomForest / XGBoost를 동일 분할로 비교하고,
+train-test 격차로 과적합을 확인했습니다. XGBoost는 train R²=1.000으로 명백히 과적합 상태였습니다.
 
-### 6. 결과 해석 (Feature Importance)
-Permutation importance와 gain importance 두 방식을 교차 검증해 `yr`(연도)이 날씨 변수보다도
-예측에 더 크게 기여한다는, 직관과 다른 결과를 확인하고 그 이유(연도별 서비스 성장 추세)를 해석했습니다.
+**5. 하이퍼파라미터 튜닝** — RandomizedSearchCV(60개 조합 × 5-fold)로 튜닝해 XGBoost의 과적합 격차를
+0.116 → 0.082로 줄였습니다. RandomForest는 규제가 걸리긴 했지만(train R² 0.982→0.962) 일반화 성능은
+개선되지 않아 더 단순한 설정을 유지했습니다.
+
+**6. 결과 해석** — gain importance와 permutation importance 두 방식으로 변수 중요도를 확인했습니다.
 
 <p align="center">
   <img src="figures/feature_importance_xgboost.png" width="520" alt="변수 중요도">
@@ -66,47 +65,52 @@ Permutation importance와 gain importance 두 방식을 교차 검증해 `yr`(�
 
 ---
 
-## Claude Code 활용 워크플로우 및 역량
+## 결론
 
-이 프로젝트는 Claude Code에게 "분석해줘"라고 한 번에 맡긴 결과물이 아니라, **각 단계마다 사용자가
-방향을 지시하고 Claude Code가 실행·검증·보고하는 반복적 협업 과정**으로 진행되었습니다.
-아래는 그 과정에서 실제로 있었던 구체적인 사례입니다.
+**날씨보다 "연도"가 더 크게 작용했습니다.** `yr`(2011→2012)의 permutation importance가 0.507로 기온
+(0.345)보다 높았습니다. 즉 이 기간 대여량 변동의 상당 부분은 날씨가 아니라 **서비스 자체의 성장**
+(이용자 기반 확대)으로 설명됩니다. 날씨 변수 중에서는 기온이 가장 중요하고, 습도가 계절보다 높게
+나온 것은 계절 정보가 `mnth`·`weathersit`·`temp`에 분산돼 있기 때문으로 보입니다.
 
-- **비판적 실행 — 지시를 맹목적으로 따르지 않음**
-  "casual, registered를 포함해서 회귀분석해달라"는 요청에 곧바로 실행하지 않고, `cnt = casual + registered`
-  관계로 인한 데이터 누수 위험을 먼저 설명한 뒤 진행 여부를 확인했습니다. 이후 사용자가 "그래도 포함해서
-  보여달라"고 요청하자 실제로 R²=1.0000이 나오는 것을 직접 보여주며 왜 그런 결과가 나오는지 설명했습니다
-  (`src/06_data_leakage_check.py`).
+**실무적으로 읽으면** — 수요의 큰 흐름(연 단위 성장, 계절)은 예측 가능하므로 자전거 재배치·정비 인력
+같은 중장기 계획에 활용할 여지가 있습니다. 다만 하루 오차가 평균 435건(≈10%) 수준이므로, 당일 단위의
+정밀한 재고 배치에 그대로 쓰기에는 부족합니다.
 
-- **자기 검증 — 결과를 생성만 하지 않고 확인함**
-  Feature importance 시각화를 생성한 뒤 차트를 직접 눈으로 검토하는 과정에서, 값과 라벨이 어긋나 있는
-  버그(정렬된 pandas Series와 정렬 안 된 numpy 배열을 한 DataFrame에 섞어 넣어 인덱스가 밀리는 문제)를
-  발견했습니다. 콘솔 출력은 정상이었지만 차트가 이상하다는 걸 알아채고 원인을 추적해 수정한 뒤
-  재생성했습니다.
+## 한계
 
-- **통계적 엄격함**
-  단일 train/test 분할 결과만으로 "어떤 모델이 낫다"고 결론짓지 않고, train-test 성능 격차로 과적합
-  여부를 확인하고, 5-fold 교차검증으로 결과가 우연이 아님을 재확인했습니다. 변수 중요도도 모델 내장
-  지표 하나만이 아니라 permutation importance로 교차 검증했습니다.
+정직하게 적으면, 이 결과에는 아래 세 가지 제약이 있습니다.
 
-- **환경 이슈 해결 및 재사용 가능한 지식으로 기록**
-  Windows에서 사용자 경로에 한글이 포함된 환경에서 `RandomizedSearchCV(n_jobs=-1)`이
-  `UnicodeEncodeError`로 실패하는 문제를 진단하고 `n_jobs=1`로 우회했으며, 이 사실을 프로젝트 문서
-  (`CLAUDE.md`)에 남겨 이후 작업에서 같은 문제를 반복하지 않도록 했습니다.
+- **미래 예측에 그대로 쓸 수 없습니다.** 1위 변수 `yr`은 이진 지표(2011=0/2012=1)이고 트리 모델은
+  외삽하지 않으므로, 2013년에는 정의되지 않은 입력이 됩니다. 이번 결과는 "미래를 맞히는 모델"이
+  아니라 **"2011~2012년 수요를 무엇이 설명하는가"** 에 대한 답입니다.
+- **무작위 분할은 일별 시계열에 낙관적입니다.** 인접일 자기상관이 강한데 10월 3일이 train,
+  10월 4일이 test에 들어갈 수 있어 성능이 부풀려졌을 가능성이 큽니다. 보고된 R²는 시간순 예측
+  성능이 아니라 동일 기간 내 설명력으로 읽어야 합니다.
+- **무학습 기준선과 비교하지 않았습니다.** "월평균으로 예측" 같은 naive baseline이 없어, 모델링으로
+  실제 얼마를 벌었는지가 아직 정량화되지 않았습니다.
 
-- **장시간 작업의 백그라운드 처리**
-  하이퍼파라미터 탐색(조합 60개 × 5-fold = 300회 학습)처럼 시간이 걸리는 작업은 백그라운드로 실행하고,
-  완료되면 결과를 검증해 보고하는 방식으로 대화 흐름을 끊지 않고 작업을 이어갔습니다.
+## 다음 단계
 
-- **지속적 문서화**
-  분석 각 단계가 끝날 때마다 작업 로그와 프로젝트 컨텍스트 문서를 갱신해, 언제든 이전 세션의 결정 근거
-  (왜 이 변수를 뺐는지, 왜 이 모델을 채택했는지)를 추적할 수 있도록 했습니다. 이 저장소의
-  [`docs/WORKLOG.md`](docs/WORKLOG.md)가 그 기록입니다.
+1. **시간순 검증** (`TimeSeriesSplit` 또는 2012 하반기 홀드아웃) — 무작위 분할이 성능을 얼마나
+   부풀렸는지 확인. 최우선 과제입니다.
+2. **naive baseline 비교** — 모델의 실제 부가가치 정량화
+3. **잔차 진단** — 오차가 특정 계절·날씨 구간에 편중되는지 확인
+4. **시드 안정성 검증** — 여러 분할에서 모델 순위가 유지되는지 확인
 
-**요약하면**: Claude Code는 단순 실행 도구가 아니라, 데이터 누수 같은 방법론적 위험을 사전에 짚어내고,
-자신이 만든 결과물을 스스로 검증해 버그를 잡아내며, 통계적으로 신뢰할 수 있는 결론을 내기 위한
-검증 절차(과적합 확인, 교차검증, 중요도 교차검증)를 갖추고, 그 전 과정을 재현 가능하게 문서화하는
-방식으로 활용되었습니다.
+---
+
+## 작업 방식 (Claude Code 활용)
+
+분석의 방향과 판단은 제가 정하고, 실행·검증·기록을 Claude Code에 맡기는 방식으로 진행했습니다.
+한 번에 "분석해줘"라고 맡긴 결과물이 아니라 단계마다 지시하고 결과를 확인한 과정이며, 그 기록이
+[`docs/WORKLOG.md`](docs/WORKLOG.md)에 남아 있습니다. 특히 도움이 된 지점:
+
+- **실행 전 위험 지적** — `casual`/`registered`를 포함해 달라고 요청했을 때 누수 위험을 먼저 짚어줘,
+  이를 확인 목적의 별도 스크립트로 분리해 남기기로 결정할 수 있었습니다.
+- **결과물 자체 검증** — feature importance 차트에서 값과 라벨이 어긋난 버그(정렬된 Series와 정렬되지
+  않은 배열을 한 DataFrame에 섞은 인덱스 문제)를 콘솔 출력이 정상인 상태에서 잡아냈습니다.
+- **환경 이슈 기록** — 사용자 경로에 한글이 포함된 Windows 환경에서 `n_jobs=-1`이 `UnicodeEncodeError`로
+  실패하는 문제를 `n_jobs=1`로 우회하고, 재발 방지를 위해 프로젝트 문서에 남겼습니다.
 
 ---
 
@@ -114,82 +118,45 @@ Permutation importance와 gain importance 두 방식을 교차 검증해 `yr`(�
 
 ```
 bike-sharing-demand-analysis/
-├── README.md                 # 이 파일
-├── requirements.txt
-├── data/
-│   ├── day.csv                # 원본 데이터 (UCI Bike Sharing Dataset)
-│   └── day_processed.csv      # hum=0 보간 처리된 정제 데이터
-├── src/                        # 분석 파이프라인 (숫자 순서대로 실행)
-│   ├── 01_data_overview.py            # 데이터 구조/결측치/기술통계/이상치 확인
-│   ├── 02_clean_missing_values.py     # hum=0 결측 처리 및 보간
-│   ├── 03_visualize_eda.py            # 온도/날씨/계절/요일 시각화
-│   ├── 04_visualize_season_weekday_heatmap.py
-│   ├── 05_baseline_linear_regression.py
-│   ├── 06_data_leakage_check.py       # casual+registered 누수 검증(비교용)
-│   ├── 07_compare_regression_models.py
-│   ├── 08_validate_models_cv_overfitting.py  # 과적합 확인 + 5-fold CV
-│   ├── 09_tune_xgboost.py
-│   ├── 10_tune_random_forest.py
-│   ├── 11_final_model_comparison.py
-│   └── 12_feature_importance.py
-├── figures/                    # 생성된 시각화 (png)
-├── tables/                     # 생성된 결과표 (csv)
-├── models/                     # 최종 모델 (joblib)
-│   ├── xgboost_tuned_final.joblib
-│   └── linear_regression_baseline.joblib
-└── docs/
-    ├── REPORT.md                # 상세 분석 리포트
-    └── WORKLOG.md               # 실제 작업 로그 (원본 그대로)
+├── data/          # day.csv (원본), day_processed.csv (hum=0 보간본)
+├── src/           # 01~12 분석 파이프라인 (숫자 순서대로 실행)
+├── figures/       # 시각화 (png)
+├── tables/        # 결과표 (csv)
+├── models/        # 학습된 모델 (joblib)
+└── docs/          # REPORT.md (상세 리포트), WORKLOG.md (작업 로그)
 ```
+
+| 스크립트 | 내용 |
+|---|---|
+| `01_data_overview.py` | 구조/결측치/기술통계/IQR 이상치 확인 |
+| `02_clean_missing_values.py` | `hum=0` 결측 처리 및 보간 |
+| `03_visualize_eda.py`, `04_visualize_season_weekday_heatmap.py` | EDA 시각화 |
+| `05_baseline_linear_regression.py` | 선형회귀 baseline |
+| `06_data_leakage_check.py` | `casual`+`registered` 누수 검증 (확인용) |
+| `07_compare_regression_models.py`, `08_validate_models_cv_overfitting.py` | 모델 비교, 과적합·교차검증 |
+| `09_tune_xgboost.py`, `10_tune_random_forest.py` | 하이퍼파라미터 튜닝 |
+| `11_final_model_comparison.py` | 최종 성능 비교 (CV + 홀드아웃) |
+| `12_feature_importance.py` | 변수 중요도 분석 |
 
 ## 재현 방법
 
 ```bash
 pip install -r requirements.txt
 
-# 파이프라인 순서대로 실행 (저장소 루트에서)
+# 저장소 루트에서 숫자 순서대로 실행
 python src/01_data_overview.py
 python src/02_clean_missing_values.py
-python src/03_visualize_eda.py
-python src/04_visualize_season_weekday_heatmap.py
-python src/05_baseline_linear_regression.py
-python src/06_data_leakage_check.py
-python src/07_compare_regression_models.py
-python src/08_validate_models_cv_overfitting.py
-python src/09_tune_xgboost.py
-python src/10_tune_random_forest.py
-python src/11_final_model_comparison.py
-python src/12_feature_importance.py
+# ... 03 ~ 12
 ```
 
-각 스크립트는 `data/`, `figures/`, `tables/`, `models/`를 기준 경로로 사용하므로 저장소 루트에서
-실행해야 합니다. (Windows에서 사용자 경로에 한글이 포함된 경우 `n_jobs=1`이 필요한 이유는
-`docs/REPORT.md`와 스크립트 주석을 참고하세요.)
+각 스크립트는 `data/`, `figures/`, `tables/`, `models/`를 상대 경로로 참조하므로 **저장소 루트에서**
+실행해야 합니다. Windows에서 사용자 경로에 한글이 포함된 경우 joblib 병렬 처리가 실패하므로
+`n_jobs=1`이 필요합니다(스크립트에 반영돼 있습니다).
 
 ## 데이터 출처
 
 [UCI Machine Learning Repository — Bike Sharing Dataset](https://archive.ics.uci.edu/dataset/275/bike+sharing+dataset)
 (Capital Bikeshare, Washington D.C., 2011–2012)
 
-## 한계 및 다음 단계
-
-이번 분석은 어디까지 검증했고 어디서 스코프를 제한했는지를 아래처럼 구분해 남겼습니다 — 각 항목이
-**최종 모델(XGBoost)의 신뢰도에 실제로 영향을 주는지**를 기준으로 나눴습니다.
-
-**최종 모델과는 무관하게 확인된 것 (baseline 해석 보강용)**
-- `temp`-`atemp` 다중공선성: 선형회귀 baseline 계수 해석에는 유효한 이슈지만, 최종 채택 모델은
-  트리 기반(XGBoost)이라 다중공선성에 영향을 받지 않음. VIF 정량화는 baseline 해석을 보강하는
-  차원의 다음 단계로 남겨둠.
-
-**다음 반복에서 이어갈 것**
-- **잔차 진단**: 예측 vs 실제 값 플롯으로 XGBoost 오차가 특정 계절·날씨 구간에 편중되는지 확인
-- **데이터 기간 확장**: `yr`이 가장 중요한 변수로 나온 것이 실제 성장 추세인지 2개년 표본 특유의
-  패턴인지는, 3년차 이상 데이터가 확보되면 검증 가능
-- **시드 안정성 검증**: 지금까지 모델 비교는 `random_state=42` 한 번의 분할 기준 — 여러 시드로
-  반복해 순위가 안정적인지 확인하면 결론의 신뢰도를 한 단계 더 높일 수 있음
-- **RandomForest 재탐색**: 이번 60개 조합 무작위 탐색에서는 유의미한 개선을 찾지 못함 — 더 넓은
-  탐색 공간이나 ExtraTrees 등 다른 앙상블 구조로 추가 실험할 여지가 있음
-
-이 프로젝트가 보여주려는 것은 "완결된 최종 결과물"이 아니라, Claude Code와 함께 가설을 검증하고
-다음 우선순위를 판단해가는 반복적인 분석 과정입니다. 위 항목들은 그 다음 반복에서 이어갈 구체적인
-다음 단계입니다. 자세한 내용은 [`docs/REPORT.md`](docs/REPORT.md)의 "한계 및 향후 과제" 절을 참고하세요.
+> Fanaee-T, H., & Gama, J. (2013). *Event labeling combining ensemble detectors and background knowledge.*
+> Progress in Artificial Intelligence, 2(2–3), 113–127.
