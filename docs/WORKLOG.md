@@ -6,7 +6,29 @@
 
 ---
 
-## 2026-08-14 (최신)
+## 2026-08-14 (최신 — 외부 리뷰 반영: 결론 정정)
+
+- **직전 작업**: 제삼자 관점의 코드/분석 리뷰를 받아 **결론 서술의 오류를 정정**함
+  - ❌ 기존 결론 "XGBoost(튜닝)이 3개 지표(R²/RMSE/MAE) 모두에서 1위" → **사실이 아님**.
+    같은 홀드아웃에서 **MAE는 RandomForest(426.19)가 XGBoost 튜닝(435.14)보다 우수**했다.
+    CV 프로토콜 한쪽만 보고 결론을 낸 것이 원인.
+  - ❌ 상위 4개 모델의 CV R² 차이(0.872~0.893)를 순위로 단정 → **fold 표준편차(±0.024~0.026)보다
+    작아 통계적으로 확정적이지 않음**. 특히 RF default(0.875) vs RF 튜닝(0.874) 차이 0.001은 노이즈.
+  - ⚠️ **선택 편향 발견**: 튜닝 모델의 CV 점수는 하이퍼파라미터를 고른 구간과 채점 구간이 겹쳐
+    낙관적으로 편향. default 모델과 나란히 순위를 매기는 것은 불공정한 비교였음.
+  - ⚠️ **라벨 오류 정정**: `RandomForest (default)` / `XGBoost (default)`로 표기했던 모델은
+    실제로는 `n_estimators=300`을 지정한 설정(XGBoost 기본값은 100) → `(n_est=300)`으로 수정.
+- `src/11_final_model_comparison.py` 재작성: 하드코딩된 수치를 제거하고 원본 데이터에서 매번
+  재계산하도록 변경. CV 표준편차 + 홀드아웃 지표를 함께 산출 → 그림도 2행(CV / 홀드아웃) 구성으로 교체.
+  - 재계산 결과 기존에 보고한 CV 평균값(0.893/0.875/0.874/0.872/0.821/0.783)은 모두 그대로 재현됨.
+- README 재작성: 분석 판단의 주어를 작업자 본인으로 정리하고, Claude Code 활용은 '작업 방식' 절로 축약.
+  결론의 실무적 함의와 한계(특히 `yr` 외삽 불가)를 명시.
+- **다음 작업 후보**: 시간순 검증(`TimeSeriesSplit` 또는 2012 하반기 홀드아웃) — 무작위 분할이
+  자기상관 때문에 성능을 부풀리고 있는지 확인하는 것이 최우선. 이어서 naive baseline 비교, 잔차 진단.
+
+---
+
+## 2026-08-14
 
 - **직전 작업**: 최종 채택 모델(XGBoost 튜닝) feature importance 분석 (`scripts/feature_importance.py` → `outputs/figures/feature_importance_xgboost.png`, `outputs/tables/feature_importance_xgboost.csv`)
   - gain importance(모델 내장) + permutation importance(test셋 R² 하락폭) 2가지로 교차 확인
