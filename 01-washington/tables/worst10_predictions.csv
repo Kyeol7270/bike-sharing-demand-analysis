@@ -1,0 +1,11 @@
+﻿date,actual,predicted,diff,split,is_isoforest_outlier
+2012-10-29,22,3593,-3571,test,True
+2012-03-24,3372,5533,-2161,test,False
+2012-07-04,7403,5598,1805,test,False
+2011-09-23,2395,4127,-1732,test,False
+2012-04-18,4367,6001,-1634,test,False
+2011-11-24,1495,3022,-1527,test,False
+2011-12-24,1011,2426,-1415,test,False
+2011-04-12,2034,3435,-1401,test,False
+2012-06-01,4127,5475,-1348,train,False
+2012-07-22,7410,6085,1325,test,False
